@@ -1,0 +1,12 @@
+/codegentemp
+/CortexM0
+/Export
+/Generated_Source
+/BUILD.log
+/REBUILD.log
+/*.cycdx
+/*.cyfit
+/*.cyprj.*
+/*.rpt
+/*.svd
+/*_timing.html

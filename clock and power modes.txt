@@ -1,0 +1,87 @@
+Clocks:
+* Low frequency: only using WCO due to BLE requirements
+* High frequency:
+** ECO needed for BLE: controlled by BLE stack, deep-sleep will turn this off.
+** IMO can be used otherwise, needed when BLE is in deep-sleep.
+
+System Power Modes
+Active:     850 uA   + 260 uA/MHz
+Sleep:      850 uA   +  60 uA/MHz
+Deep-sleep:   1.5 uA                  WCO/ILO only.   Few wake-up sources
+
+BLE Power Modes:
+DEEPSLEEP:    Uses WCO.  Allows CPU deep sleep (except in ECO_STABLE state)
+SLEEP/ACTIVE: Uses ECO.  Allows CPU sleep (except in EVENT_CLOSE state)
+
+Executing from flash:
+*  2.1 mA @  3 MHz
+*  2.5 mA @  6 MHz
+*  4.0 mA @ 12 MHz
+*  7.1 mA @ 24 MHz <--
+* 13.4 mA @ 48 MHz
+
+* DSRM request costs 5 mA (according to spec)
+* Pullup 5.6 kOhm, so sinking current costs 1 mA
+* LED: about 0.5 mA
+
+* UART: <0.1 mA
+* Voltage monitor: 4.5 Volt, 0.1 mA
+
+* IMO
+** 48 MHz: 1000 uA
+** 24 MHz:  325 uA
+** 12 MHz:  225 uA
+**  6 MHz:  180 uA
+**  3 MHz:  150 uA
+* ECO: 1400 uA
+
+UART issue:
+* IMO is +/- 2% and is just within the 2.5% limit for UART.
+* ECO is <0.1%, but BLE sleep is prevented.
+
+== AN92584 - Designing for Low Power and Estimating Battery Life for BLE Applications ==
+https://www.cypress.com/file/140991/download
+
+System assumes the ECO is used by the BLESS only. Application uses the IMO.
+
+* BLESS should be in DEEPSLEEP between BLE events.
+* System should be in Sleep mode when BLE permits and no application processing needed.
+* If no application processing is needed, but BLE activity is needed, then disable IMO
+  and rely on ECO only.
+* If ECO is used in sleep (see point above), then divide by 8 down to 3 MHz to reduce
+  power.
+  
+This scheme relies on the question whether we can run the UART on the IMO.
+
+== Note from Bluetooth Stack Documentation (CyBle_EnterLPM)
+
+The ECO is stopped and Watch Crystal Oscillator (WCO) is used to maintain link layer timing. All the regulators
+in the Radio Frequency (RF) transceiver are turned off to reduce leakage current and BLESS logic is kept powered
+ON from the System Resources Sub System (SRSS) deep-sleep regulator for retention of current BLESS state
+information. This mode can be entered from either Idle (Active) or Sleep mode. It should be entered when the next
+scheduled activity instant in time domain is greater than the Deep Sleep total wakeup time (typically 2ms).
+
+NOTE: If application is using ECO as source of HFCLK for higher clock accuracy and calls this API function to
+move BLESS to Deep Sleep mode then HFCLK accuracy and frequency would be impacted as this API function 
+switches HFCLK source from ECO to IMO. On BLESS wakeup, the HFCLK source would be switched back to ECO.
+
+Recommendation is that application turns on IMO and sets it as HFCLK source before calling this API function.
+Upon wakeup due to sources other than BLESS, application can turn on ECO and switch HFCLK source to ECO.
+Pseudo code of recommendation is given below.
+
+Pseudo  Code: 
+Turn  on  IMO  and  switch  HFCLK  to  IMO  CyBle_EnterLPM(CYBLE_BLESS_DEEPSLEEP);
+CySysPmDeepSleep();
+If exit is not due to BLE and application need to use ECO then turn on ECO and switch HFCLK source to ECO.
+
+== Notes on flash writes ==
+
+Three functions:
+* CyBle_StoreBondingData: Remember pairings.
+* CyBle_StoreStackData:   backup stack internal RAM into flash.
+* CyBle_StoreAppData:     backup application specific data into flash.
+
+CyBle_StoreBondingData (on BLE devices with 128K of flash) will modify IMO to 48 MHz. Devices running of IMO
+should take this into account. Flash writes are blocking (for 20 ms) and should only be done during disconnect.
+For 256 KB devices clock change is not needed.
+CyBle: call continuously until CYBLE_ERROR_OK.
